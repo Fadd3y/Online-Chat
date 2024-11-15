@@ -5,17 +5,18 @@ import java.io.IOException;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class Server {
     private static boolean isExit = false;
-    private static final ConcurrentLinkedQueue<Message> messages = new ConcurrentLinkedQueue<>();
-    private static final ConcurrentHashMap<String, DataOutputStream> users = new ConcurrentHashMap<>();
+    private static final LinkedBlockingQueue<Message> MESSAGES = new LinkedBlockingQueue<>();
+    private static final ConcurrentHashMap<String, DataOutputStream> USERS = new ConcurrentHashMap<>();
 
-    public static void main(String[] args) throws IOException, InterruptedException {
-        Thread connectionHandler = new ConnectionHandler(users, messages);
+    public static void main(String[] args) throws InterruptedException {
+        Thread connectionHandler = new ConnectionHandler(USERS, MESSAGES);
         connectionHandler.start();
 
-        Thread messageSender = new MessageSender(users, messages);
+        Thread messageSender = new MessageSender(USERS, MESSAGES);
         messageSender.start();
 
         Scanner scanner = new Scanner(System.in);

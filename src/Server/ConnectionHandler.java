@@ -12,12 +12,12 @@ import java.util.concurrent.*;
 
 public class ConnectionHandler extends Thread {
     private final ConcurrentHashMap<String, DataOutputStream> USERS;
-    private final ConcurrentLinkedQueue<Message> MESSAGES;
+    private final LinkedBlockingQueue<Message> MESSAGES;
     private static final int PORT = 23456;
 
-    private ArrayList<Connection> connections = new ArrayList<>();
+    private final ArrayList<Connection> connections = new ArrayList<>();
 
-    ConnectionHandler(ConcurrentHashMap<String, DataOutputStream> users, ConcurrentLinkedQueue<Message> messages) {
+    ConnectionHandler(ConcurrentHashMap<String, DataOutputStream> users, LinkedBlockingQueue<Message> messages) {
         super("ConnectionHandler");
         this.USERS = users;
         this.MESSAGES = messages;
@@ -27,13 +27,12 @@ public class ConnectionHandler extends Thread {
     public void run() {
         try (ServerSocket serverSocket = new ServerSocket(PORT)
         ) {
-            System.out.println(Thread.currentThread().getName() + "здесь");
             serverSocket.setSoTimeout(1000);
             while (!isInterrupted()) {
                 try {
                     Connection connection = new Connection(serverSocket.accept());
                     connection.start();
-                    connections.add(connection); //TODO: временно
+                    connections.add(connection);
 
                 } catch (Exception e) {
                     //System.out.println("ждем");
@@ -62,12 +61,10 @@ public class ConnectionHandler extends Thread {
                 String readUTF2 = readUTFMessage(inputStream);
 
                 if (readUTF2 != null) {
-                    Message message = Message.parseMessage(readUTF2);
-                    System.out.println(message);
-                    username = message.getUsername();
-                    currentThread().setName(username);
-                    USERS.put(username, outputStream);
-                    sendMessage(message);
+                    initUserByFirstMessage(readUTF2, outputStream);
+                } else {
+                    disconnectUser();
+                    return;
                 }
 
                 System.out.println(username + " подключился");
@@ -81,17 +78,29 @@ public class ConnectionHandler extends Thread {
                     }
                 }
             } catch (Exception e) {
-                USERS.remove(Thread.currentThread().getName());
-
-                Message message = new Message(username, username + " вышел.");
-                sendMessage(message);
-
-                System.out.println(username + " вышел");
+                disconnectUser();
             }
         }
 
         private void sendMessage(Message message) {
             MESSAGES.add(message);
+        }
+
+        private void disconnectUser() {
+            USERS.remove(Thread.currentThread().getName());
+            Message message = new Message(username, username + " вышел.");
+            sendMessage(message);
+
+            System.out.println(username + " вышел");
+        }
+
+        private void initUserByFirstMessage(String inputLine, DataOutputStream outputStream) {
+            Message message = Message.parseMessage(inputLine);
+            System.out.println(message);
+            username = message.getUsername();
+            currentThread().setName(username);
+            USERS.put(username, outputStream);
+            sendMessage(message);
         }
 
         private String readUTFMessage(DataInputStream inputStream) throws ExecutionException, InterruptedException {

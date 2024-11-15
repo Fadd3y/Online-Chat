@@ -1,18 +1,15 @@
 package Server;
 
 import java.io.DataOutputStream;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class MessageSender extends Thread {
 
     private final ConcurrentHashMap<String, DataOutputStream> users;
-    private final ConcurrentLinkedQueue<Message> messages;
+    private final LinkedBlockingQueue<Message> messages;
     private final ExecutorService sendExecutor;
 
-    public MessageSender(ConcurrentHashMap<String, DataOutputStream> users, ConcurrentLinkedQueue<Message> messages) {
+    public MessageSender(ConcurrentHashMap<String, DataOutputStream> users, LinkedBlockingQueue<Message> messages) {
         super("MessageSender");
         this.users = users;
         this.messages = messages;
@@ -21,23 +18,45 @@ public class MessageSender extends Thread {
 
     @Override
     public void run() {
-        System.out.println(Thread.currentThread().getName() + "здесь");
         while (!isInterrupted()) {
             try {
-                Thread.sleep(10);
-                if (!messages.isEmpty()) {
-                    Message message = messages.peek();
-                    users.values().forEach(user -> sendExecutor.submit(new SendMessageThread(user, message)));
-                    messages.remove();
-                }
-            } catch (Exception e) {
-                System.out.println("Отправщик завершил работу в блоке кэтч");
-                sendExecutor.shutdown();
+                Message message = getMessageFromQueue();
+                sendMessageToUsers(message);
+            } catch (InterruptedException | ExecutionException e){
+                Thread.currentThread().interrupt();
             }
-
         }
-        sendExecutor.shutdown();
+        sendExecutor.shutdownNow();
         System.out.println("Отправщик завершил работу");
+    }
+
+    private Message getMessageFromQueue() throws InterruptedException , ExecutionException {
+        CompletableFuture<Message> getMessage = CompletableFuture.supplyAsync(() -> {
+            try {
+                return messages.take();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        });
+
+        Message message = null;
+        while (!isInterrupted()) {
+            try {
+                message = getMessage.get(5, TimeUnit.SECONDS);
+                break;
+            } catch (TimeoutException e) {
+                System.out.println("Ждем сообщения для отправки...");
+            }
+        }
+        return message;
+    }
+
+    private void sendMessageToUsers(Message message) {
+        var outputList = users.values();
+        for (var output : outputList) {
+            sendExecutor.submit(new SendMessageThread(output, message));
+        }
     }
 
     public static class SendMessageThread extends Thread {
@@ -53,15 +72,9 @@ public class MessageSender extends Thread {
         public void run() {
             try {
                 user.writeUTF(message.toString());
-                System.out.println(Thread.currentThread().getName() + "здесь");
-
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-        }
-
-        private void sendUTF(String text) {
-
         }
     }
 }
